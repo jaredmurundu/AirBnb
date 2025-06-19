@@ -1,57 +1,60 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const connectWithDB = require("./config/db");
-const cookieSession = require("cookie-session");
-const cookieParser = require("cookie-parser");
-const cloudinary = require("cloudinary").v2;
+const express = require('express');
+const router = express.Router();
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
 
-// connect with database
-connectWithDB();
+// multer
+const  upload = multer({ dest: '/tmp' });
 
-// cloudinary configuration
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+router.get('/', (req, res) => {
+  res.status(200).json({
+    greeting: 'Hello from airbnb-clone api',
+  });
 });
 
-const app = express();
-
-// For handling cookies
-app.use(cookieParser());
-
-// Initialize cookie-session middleware
-app.use(
-  cookieSession({
-    name: "session",
-    maxAge: process.env.COOKIE_TIME * 24 * 60 * 60 * 1000,
-    keys: [process.env.SESSION_SECRET],
-    secure: true, // Only send over HTTPS
-    sameSite: "none", // Allow cross-origin requests
-    httpOnly: true, // Makes the cookie accessible only on the server-side
-  })
-);
-
-// middleware to handle json
-app.use(express.json());
-
-// CORS
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL,
-    credentials: true,
-  })
-);
-
-// use express router
-app.use("/", require("./routes"));
-
-app.listen(process.env.PORT || 8000, (err) => {
-  if (err) {
-    console.log("Error in connecting to server: ", err);
+// upload photo using image url
+router.post('/upload-by-link', async (req, res) => {
+  try {
+    const { link } = req.body;
+    let result = await cloudinary.uploader.upload(link, {
+      folder: 'Airbnb/Places',
+    });
+    res.json(result.secure_url);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: 'Internal server error',
+    });
   }
-  console.log(`Server is running on port no. ${process.env.PORT}`);
 });
 
-module.exports = app;
+// upload images from local device
+router.post('/upload', upload.array('photos', 100), async (req, res) => {
+  try {
+    let imageArray = [];
+
+    for (let index = 0; index < req.files.length; index++) {
+      let { path } = req.files[index];
+      let result = await cloudinary.uploader.upload(path, {
+        folder: 'Airbnb/Places',
+      });
+      imageArray.push(result.secure_url);
+    }
+
+    res.status(200).json(imageArray);
+  } catch (error) {
+    console.log('Error: ', error);
+    res.status(500).json({
+      error,
+      message: 'Internal server error',
+    });
+  }
+});
+
+
+router.use('/user', require('./user'));
+router.use('/places', require('./place'));
+router.use('/bookings', require('./booking'));
+
+
+module.exports = router;
